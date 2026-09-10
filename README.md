@@ -15,7 +15,7 @@
   <a href="#limitations">Limitations</a>
 </p>
 
-**[Your Name]** · [LinkedIn](YOUR_LINKEDIN_URL)
+**[Gidion Depari]** · [LinkedIn](www.linkedin.com/in/gidion2)
 
 > This project started as a house price prediction problem, but the main goal is to build the complete path from experimentation to a maintainable, testable, deployable, and monitored ML service.
 
