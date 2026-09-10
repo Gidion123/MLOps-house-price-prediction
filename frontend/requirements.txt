@@ -1,0 +1,15 @@
+# =============================================================================
+# Dependency FRONTEND — sengaja terpisah dari requirements.txt backend.
+#
+# Perhatikan apa yang TIDAK ada di sini: xgboost, scikit-learn, mlflow, scipy.
+# Frontend tidak memuat model, tidak menghitung apa pun, tidak tahu XGBoost itu
+# apa. Ia cuma mengirim JSON dan menggambar jawabannya.
+#
+# Itu bukan penghematan ukuran image semata. Selama daftar ini tetap pendek,
+# frontend tidak MUNGKIN diam-diam menghitung sendiri — dan training-serving
+# skew versi UI (form yang memakai aturan berbeda dari server) jadi mustahil.
+# =============================================================================
+
+streamlit==1.52.2
+requests==2.34.2
+pandas==2.3.3     # baca CSV untuk prediksi massal & tampilkan tabel

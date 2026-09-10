@@ -1,0 +1,29 @@
+# =============================================================================
+# prometheus.yml — apa yang di-scrape, seberapa sering, dan kapan harus berteriak.
+# =============================================================================
+
+global:
+  # 15 detik adalah kompromi lazim: cukup rapat untuk melihat lonjakan,
+  # cukup jarang supaya penyimpanannya tidak meledak.
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    proyek: house-price-prediction
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus memantau dirinya sendiri. Kedengarannya lucu, tapi ini yang
+  # memberi tahu kalau si pemantau sendiri yang sedang bermasalah.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: house-price-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]     # "api" = nama service di compose, bukan localhost
+        labels:
+          layanan: house-price-api
+          lingkungan: lokal

@@ -1,0 +1,59 @@
+# =============================================================================
+# .dockerignore — apa yang TIDAK ikut masuk ke build context.
+#
+# Ini bukan sekadar penghemat ukuran image. Baris pertama di bawah adalah
+# pengaman: tanpa itu, `COPY . .` yang ceroboh akan memanggang .env ke dalam
+# layer image. Layer image bisa dibongkar siapa pun yang menarik image itu —
+# rahasianya bocor walau file-nya sudah dihapus di layer berikutnya (slide 28).
+#
+# Efek sampingnya juga nyata: build context yang gemuk = build lambat, dan tiap
+# perubahan sekecil apa pun di notebook membatalkan cache Docker.
+# =============================================================================
+
+# ---- Rahasia. Jangan pernah dihapus dari daftar ini. ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- Data mentah: di-mount read-only saat runtime, bukan dipanggang ----
+data/
+!data/raw/.gitkeep
+
+# ---- Hasil eksperimen ----
+mlruns/
+mlflow.db
+mlartifacts/
+notebooks/
+reports/
+submissions/
+logs/
+_to_delete/
+
+# ---- Yang tidak dipakai container melayani request ----
+tests/
+pytest.ini
+requirements-dev.txt
+alur.txt
+README.md
+
+# ---- Python & OS ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+.git/
+.gitignore
+.DS_Store
+.vscode/
+.idea/
+.ipynb_checkpoints/
+
+# CATATAN: models/ SENGAJA tidak ada di daftar ini. Artifact champion memang
+# harus ikut masuk image — lihat alasannya di Dockerfile.

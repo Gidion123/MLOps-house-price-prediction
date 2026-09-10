@@ -1,0 +1,71 @@
+# =============================================================================
+# .gitignore
+# Slide 28 & README mentor: dua hal yang bikin nilai hilang percuma adalah
+# API key ikut ter-commit, dan mlruns/ + data/ masuk Git.
+# Aturannya: yang masuk Git itu SUMBER KODE. Hasil kerja tidak.
+# =============================================================================
+
+# ---- Rahasia. Ini yang paling penting. ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- Hasil kerja MLflow (bisa dibuat ulang dengan menjalankan training) ----
+mlruns/
+mlflow.db
+mlartifacts/
+
+# ---- Data (besar, bukan kode, dan lisensinya milik Kaggle) ----
+data/raw/*
+data/processed/*
+!data/**/.gitkeep
+
+# ---- Artifact model & log ----
+# Pola pakai ** supaya folder models/ DI MANA PUN ikut diabaikan
+# (pernah kejadian: notebooks/models/ lolos karena pola "models/*"
+#  ter-anchor ke root, dan artifact 5 MB nyaris ikut ter-commit).
+**/models/*
+!models/.gitkeep
+
+# ---- Hasil submission Kaggle (output, bukan sumber kode) ----
+submissions/*
+!submissions/.gitkeep
+logs/*
+!logs/.gitkeep
+*.joblib
+*.pkl
+
+# ---- Output notebook & laporan ----
+.ipynb_checkpoints/
+reports/figures/*
+!reports/figures/.gitkeep
+# drift_report.json — hasil kerja monitoring, bukan sumber kode
+reports/*.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Virtual environment ----
+.venv/
+venv/
+env/
+
+# ---- Folder tampungan berkas usang (menunggu dihapus manual) ----
+_to_delete/
+
+# ---- OS & editor ----
+.DS_Store
+.vscode/
+.idea/
+
+# Personal learning notes
+docs/

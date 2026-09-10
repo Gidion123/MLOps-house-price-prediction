@@ -1,0 +1,223 @@
+# =============================================================================
+# config.yaml — SEMUA angka & keputusan yang bisa berubah, dikumpulkan di sini.
+#
+# Kenapa file ini ada?
+# Supaya tidak ada "angka sihir" yang tersebar di banyak file Python. Mau ganti
+# ambang quality gate? Ubah satu baris di sini, bukan mencarinya di 6 file.
+#
+# Yang TIDAK boleh ada di file ini: rahasia (API key, password, token).
+# Rahasia dibaca dari .env lewat pydantic-settings.
+# =============================================================================
+
+project:
+  name: house-price-prediction
+  random_state: 42          # tanpa ini, tiap run hasilnya beda (slide 27)
+  holdout_size: 0.2
+
+data:
+  target: SalePrice
+  id_column: Id
+  # Dibaca dengan keep_default_na=False lalu "NA" diterjemahkan sendiri.
+  # Alasannya: pandas menelan kategori sah "None" jadi NaN (notebook Bagian 2.3).
+  na_token: "NA"
+
+# -----------------------------------------------------------------------------
+# Kolom yang HARAM dipakai — temporal leakage (notebook Section 13.4 / 4.13).
+# Nilainya baru ada SETELAH rumah terjual, jadi tidak akan pernah ada di request.
+# -----------------------------------------------------------------------------
+leakage_columns:
+  - MoSold
+  - YrSold
+  - SaleType
+  - SaleCondition
+
+# -----------------------------------------------------------------------------
+# KONTRAK API — 20 field yang diminta dari user.
+# Daftar ini adalah sumber kebenaran tunggal untuk Pydantic schema di api/.
+# -----------------------------------------------------------------------------
+api_contract:
+  numeric:
+    - OverallQual
+    - OverallCond
+    - GrLivArea
+    - TotalBsmtSF
+    - LotArea
+    - YearBuilt
+    - YearRemodAdd
+    - GarageCars
+    - FullBath
+    - HalfBath
+    - BsmtFullBath
+    - BsmtHalfBath
+    - Fireplaces
+  categorical:
+    - Neighborhood
+    - MSZoning
+    - ExterQual
+    - BsmtQual
+    - KitchenQual
+    - HeatingQC
+    - CentralAir
+  # Tipe tiap field numerik — notebook Section 13.2 (API_CONTRACT_INT/FLOAT).
+  # Bukan detail kosmetik: tipe ini ikut masuk contract_hash, dan menolak
+  # GrLivArea = 1710.5 hanya karena "biasanya bulat" adalah penolakan yang
+  # tidak punya dasar di data.
+  integer_fields:
+    - OverallQual
+    - OverallCond
+    - YearBuilt
+    - YearRemodAdd
+    - GarageCars
+    - FullBath
+    - HalfBath
+    - BsmtFullBath
+    - BsmtHalfBath
+    - Fireplaces
+  float_fields:
+    - GrLivArea
+    - TotalBsmtSF
+    - LotArea
+
+# Fitur turunan: dihitung server, TIDAK diminta dari user.
+engineered_features:
+  - TotalSF
+  - TotalBath
+  - QualxArea
+
+# -----------------------------------------------------------------------------
+# Strategi imputasi — notebook Section 13.2 (`add_api_safe_fe`).
+#
+# Soalnya: di train.csv, BsmtQual kosong berarti "rumah ini tidak punya
+# basement". Lewat API, user tidak bisa mengirim "kosong" — ia butuh sebuah
+# kata. Kontrak notebook memilih kata "None".
+#
+# Aturannya SATU arah dan wajib dipatuhi kedua sisi: token "None" yang masuk
+# lewat API dikembalikan menjadi missing value SEBELUM preprocessing, lalu
+# ditangani imputer yang sama persis dengan yang dipakai waktu training.
+#
+# Kenapa bukan dijadikan kategori sendiri ("NoBasement")? Karena model
+# production di notebook dilatih dengan BsmtQual kosong = missing, sehingga
+# encoder-nya hanya mengenal 4 kategori (Ex/Fa/Gd/TA). Menambah kategori
+# kelima di sisi API berarti mengirim nilai yang tidak pernah dilihat encoder:
+# one-hot-nya jadi nol semua, prediksinya salah, dan tidak ada error apa pun
+# yang muncul. Kontrak dan artifact harus sepakat, dan artifact-lah yang
+# menentukan.
+# -----------------------------------------------------------------------------
+imputation:
+  structural_categorical:     # kolom yang punya token "tidak punya" di API
+    - BsmtQual
+  structural_api_token: "None"   # dikirim user -> diubah jadi NaN -> diimputasi
+  numeric_strategy: median    # untuk yang benar-benar hilang
+  categorical_strategy: most_frequent
+
+# -----------------------------------------------------------------------------
+# Batas validasi request API. Diambil dari rentang data training, dilebarkan
+# secukupnya supaya rumah wajar di luar sampel tidak ditolak.
+# -----------------------------------------------------------------------------
+validation:
+  numeric_ranges:
+    OverallQual:  {min: 1,    max: 10}
+    OverallCond:  {min: 1,    max: 9}
+    GrLivArea:    {min: 100,  max: 8000}
+    TotalBsmtSF:  {min: 0,    max: 8000}
+    LotArea:      {min: 500,  max: 300000}
+    YearBuilt:    {min: 1800, max: 2030}
+    YearRemodAdd: {min: 1800, max: 2030}
+    GarageCars:   {min: 0,    max: 6}
+    FullBath:     {min: 0,    max: 6}
+    HalfBath:     {min: 0,    max: 4}
+    BsmtFullBath: {min: 0,    max: 4}
+    BsmtHalfBath: {min: 0,    max: 4}
+    Fireplaces:   {min: 0,    max: 6}
+  categorical_values:
+    Neighborhood: [Blmngtn, Blueste, BrDale, BrkSide, ClearCr, CollgCr, Crawfor,
+                   Edwards, Gilbert, IDOTRR, MeadowV, Mitchel, NAmes, NPkVill,
+                   NWAmes, NoRidge, NridgHt, OldTown, SWISU, Sawyer, SawyerW,
+                   Somerst, StoneBr, Timber, Veenker]
+    MSZoning:     ["C (all)", FV, RH, RL, RM]
+    # Daftar di bawah bukan "semua nilai yang mungkin ada di dunia", tapi
+    # PERSIS nilai yang muncul di train.csv (notebook Section 15.2), urut
+    # seperti sorted(). Kategori yang tidak pernah dilihat encoder akan
+    # di-one-hot jadi nol semua tanpa error — jadi menawarkannya di kontrak
+    # sama dengan menjanjikan sesuatu yang tidak bisa dijawab model.
+    # Karena itu "Po" TIDAK ada di ExterQual & KitchenQual: nilainya memang
+    # tidak pernah muncul di data latih (hanya HeatingQC yang punya).
+    ExterQual:    [Ex, Fa, Gd, TA]
+    BsmtQual:     [Ex, Fa, Gd, "None", TA]   # "None" = rumah tanpa basement
+    KitchenQual:  [Ex, Fa, Gd, TA]
+    HeatingQC:    [Ex, Fa, Gd, Po, TA]
+    CentralAir:   [N, Y]
+
+# -----------------------------------------------------------------------------
+# Model — XGBoost TUNGGAL.
+#
+# Hyperparameter di bawah = `candidate_params` notebook: pemenang Optuna
+# Phase A (Section 8.8.6), yang dikonfirmasi ulang dengan CV yang sama di
+# Section 8.8.8 dan dipakai apa adanya oleh champion production Section 13.
+# Phase B (Section 8.8.6 lanjutan) tidak memperbaiki apa pun — trial
+# terbaiknya adalah titik Phase A yang di-enqueue kembali.
+#
+# Catatan yang sengaja ditulis: LightGBM dan blend XGB+LGBM MUNCUL di riset
+# dan bahkan menang tipis pada kontrak API (0.12522 vs 0.12581 = 0,47%).
+# Aturan keputusan notebook Section 13.5 menetapkan ambang 1%, jadi blend
+# TIDAK masuk production. Riset yang menang tipis bukan alasan menambah
+# satu model lagi ke jalur inference.
+# -----------------------------------------------------------------------------
+model:
+  name: house_price_xgb_api_contract_v1
+  version: v1
+  type: xgboost
+  target_transformation: log1p        # dibalik dengan expm1 saat serving
+  inverse_transformation: expm1
+  hyperparameters:
+    n_estimators: 2165
+    learning_rate: 0.024811163001369888
+    max_depth: 2
+    min_child_weight: 1.9836806992242824
+    subsample: 0.8184227116696507
+    colsample_bytree: 0.7427630611821371
+    reg_lambda: 1.1510527698540107
+    reg_alpha: 0.00001432676346352993
+    gamma: 0.006718426290242995
+
+training:
+  cv_folds: 5
+
+# -----------------------------------------------------------------------------
+# Quality gate (slide 26). Pipeline BERHENTI kalau tidak lolos.
+# -----------------------------------------------------------------------------
+quality_gate:
+  max_cv_rmse_log: 0.15       # ambang mutu absolut (notebook GATE_API_MAX_RMSE_LOG)
+
+  # Pembanding yang benar BUKAN LinearRegression, tapi kontrak yang lebih
+  # sempit: 17 field tanpa fitur turunan = 0.12936 (notebook Section 13.3,
+  # skenario B). Pertanyaannya "apakah 3 field kamar mandi tambahan + 3 fitur
+  # turunan yang kita minta dari user memang dibayar dengan akurasi?" —
+  # bukan "apakah kita mengalahkan model yang tidak pernah dipertimbangkan".
+  baseline_rmse_log: 0.12936
+
+  max_holdout_gap_ratio: 2.0  # holdout tidak boleh > 2x CV std di atas CV mean
+
+monitoring:
+  drift_p_value_threshold: 0.05
+  window_size: 200
+
+# -----------------------------------------------------------------------------
+# Aturan promosi di Model Registry — kapan alias @champion boleh berpindah.
+#
+# Tanpa aturan di bawah, "lebih baik" berarti menang sekecil apa pun. Padahal
+# std CV model ini ~0.015: challenger yang menang 0.0001 bukan model yang lebih
+# baik, itu KEBISINGAN SAMPLING. Sistem otomatis tanpa margin akan bolak-balik
+# mengganti champion karena keberuntungan acak, dan tiap pergantian adalah
+# risiko produksi yang tidak dibayar dengan perbaikan apa pun.
+# -----------------------------------------------------------------------------
+registry:
+  # Challenger wajib menang lebih dari (faktor x std CV miliknya sendiri).
+  # 0.25 x 0.015 = 0.00375 — cukup untuk menyaring kebisingan, cukup longgar
+  # untuk tidak menolak perbaikan sungguhan. Isi 0 untuk mematikan margin.
+  margin_std_faktor: 0.25
+
+  # Tolak challenger yang kontrak fiturnya berbeda dari champion. Model 79-fitur
+  # dan model 20-fitur menjawab soal yang berbeda; membandingkan RMSE keduanya
+  # sama saja membandingkan nilai ujian dari dua mata pelajaran.
+  wajib_kontrak_sama: true

@@ -1,0 +1,97 @@
+# =============================================================================
+# alerts.yml — aturan yang membuat Prometheus berteriak sendiri.
+#
+# Prinsip yang dipakai memilih isi file ini: satu alert harus bisa dijawab
+# pertanyaan "kalau ini bunyi jam 2 pagi, apa yang harus saya lakukan?" Alert
+# yang tidak punya jawaban untuk pertanyaan itu bukan alert, cuma kebisingan —
+# dan alert berisik pada akhirnya membuat semua alert diabaikan.
+#
+# Perhatikan klausa `for:` di tiap aturan. Itu yang membedakan "sedang bermasalah"
+# dari "kebetulan sekali meleset". Tanpa `for:`, satu scrape yang gagal saat
+# deploy sudah cukup untuk membangunkan orang.
+# =============================================================================
+
+groups:
+  - name: ketersediaan
+    rules:
+      - alert: ApiTidakTerjangkau
+        expr: up{job="house-price-api"} == 0
+        for: 1m
+        labels:
+          keparahan: kritis
+        annotations:
+          ringkas: "API tidak bisa di-scrape selama 1 menit"
+          tindakan: "Cek `docker compose ps` dan `docker compose logs api`."
+
+      - alert: ModelTidakDimuat
+        expr: house_price_model_siap == 0
+        for: 2m
+        labels:
+          keparahan: kritis
+        annotations:
+          ringkas: "Proses hidup tapi artifact model tidak termuat"
+          tindakan: "Artifact hilang atau rusak. Jalankan training lalu build ulang image."
+
+  - name: mutu_layanan
+    rules:
+      # Dihitung sebagai PROPORSI, bukan jumlah. Sepuluh error dari sepuluh ribu
+      # request itu normal; sepuluh error dari dua puluh request itu kebakaran.
+      - alert: TingkatErrorTinggi
+        expr: |
+          sum(rate(house_price_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(house_price_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          keparahan: kritis
+          
+        annotations:
+          ringkas: "Lebih dari 5% request menghasilkan 5xx"
+          tindakan: "Cari request_id di logs/predictions.log dengan level ERROR."
+
+      - alert: LatencyP95Melar
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(house_price_http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels:
+          keparahan: peringatan
+        annotations:
+          ringkas: "p95 latency di atas 500 ms"
+          tindakan: "Normalnya ~7 ms. Cek beban container dan ukuran batch yang masuk."
+
+      # 422 yang melonjak bukan bug server — itu tanda ada klien yang salah paham
+      # kontrak. Diperlakukan sebagai peringatan, bukan kritis.
+      - alert: BanyakRequestDitolak
+        expr: |
+          sum(rate(house_price_prediksi_total{hasil="ditolak"}[10m]))
+            / sum(rate(house_price_prediksi_total[10m])) > 0.30
+        for: 10m
+        labels:
+          keparahan: peringatan
+        annotations:
+          ringkas: "Lebih dari 30% request prediksi ditolak validasi"
+          tindakan: "Kemungkinan ada klien baru yang salah membaca kontrak di /docs."
+
+  - name: kesehatan_model
+    rules:
+      - alert: DriftTerdeteksi
+        expr: house_price_drift_fitur_bergeser > 0
+        for: 15m
+        labels:
+          keparahan: peringatan
+        annotations:
+          ringkas: "{{ $value }} fitur bergeser dari sebaran data latih"
+          tindakan: "Periksa sumber trafik dulu (klien baru?), baru pertimbangkan retrain."
+
+      # Memantau si pemantau. Kalau job drift berhenti jalan, angka drift akan
+      # membeku di nilai terakhirnya yang mungkin nol — dan dashboard terlihat
+      # hijau justru karena tidak ada yang memeriksanya lagi. Ini kegagalan
+      # monitoring yang paling sulit disadari.
+      - alert: AnalisisDriftBasi
+        expr: time() - house_price_drift_terakhir_unix > 86400
+        for: 30m
+        labels:
+          keparahan: peringatan
+        annotations:
+          ringkas: "Analisis drift terakhir lebih dari 24 jam lalu"
+          tindakan: "Jalankan `python -m src.monitor` atau perbaiki job terjadwalnya."

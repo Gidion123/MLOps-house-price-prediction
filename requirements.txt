@@ -1,0 +1,47 @@
+# =============================================================================
+# requirements.txt — dependency PRODUCTION (yang ikut masuk ke dalam Docker image)
+#
+# Kenapa versinya dipaku pakai "==" dan bukan ">=" ?
+# Ini bagian "environment" dari reproducibility quartet (slide 27 Day 49):
+#   1. kode        -> git commit SHA
+#   2. data        -> hash file
+#   3. environment -> file ini + Docker   <-- kita di sini
+#   4. keberuntungan -> random_state
+# Tanpa pin, image yang di-build hari ini isinya beda dengan yang di-build bulan
+# depan. "Kok angkanya beda?" berubah dari misteri jadi git diff kalau dipaku.
+#
+# Diuji jalan bersama di Python 3.12.
+# =============================================================================
+
+# ---- Data & numerik ----
+numpy==2.5.2
+pandas==2.3.3
+scipy==1.18.1                 # dipakai monitoring: uji Kolmogorov-Smirnov
+
+# ---- Machine learning ----
+scikit-learn==1.9.0
+xgboost==3.4.1                # champion produksi = XGBoost tunggal
+joblib==1.5.3                 # simpan & muat artifact model
+#
+# CATATAN: lightgbm SENGAJA tidak ada di sini.
+# Champion kontrak API adalah XGBoost tunggal (lihat notebook Section 19):
+# blend XGB+LGBM terbukti TIDAK menolong pada feature set 20 field.
+# Kalau suatu hari blend dipromosikan jadi champion, lightgbm WAJIB
+# dipindahkan ke file ini — kalau tidak, container akan gagal saat predict.
+
+# ---- Experiment tracking + model registry (rubrik #2) ----
+mlflow==3.15.1
+
+# ---- Serving (rubrik #4) ----
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.4
+pydantic-settings==2.15.0     # baca config dari .env, tetap type-safe
+anyio==4.14.2
+
+# ---- Monitoring (rubrik #3 & #5) ----
+prometheus-client==0.26.0
+
+# ---- Utilitas ----
+PyYAML==6.0.3                 # baca config/config.yaml
+requests==2.34.2

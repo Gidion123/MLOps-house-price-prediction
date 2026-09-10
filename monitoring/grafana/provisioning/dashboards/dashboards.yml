@@ -1,0 +1,20 @@
+# =============================================================================
+# Memberi tahu Grafana: muat semua dashboard JSON dari folder ini saat start.
+# =============================================================================
+
+apiVersion: 1
+
+providers:
+  - name: house-price
+    orgId: 1
+    folder: MLOps
+    type: file
+    disableDeletion: false
+    # allowUiUpdates: true supaya dashboard tetap bisa diutak-atik di UI untuk
+    # eksperimen. Tapi perubahan itu TIDAK abadi — begitu container dibuat
+    # ulang, file JSON yang menang. Kalau mau perubahannya permanen: export
+    # JSON-nya dari UI, timpa file di repo, commit.
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

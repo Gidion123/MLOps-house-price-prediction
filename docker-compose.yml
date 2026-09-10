@@ -1,0 +1,161 @@
+# =============================================================================
+# docker-compose.yml — tiga service yang saling bicara.
+#
+#   api         BACKEND — menyajikan prediksi dan mengekspos /metrics
+#   streamlit   FRONTEND — form untuk manusia; bicara ke api HANYA lewat HTTP
+#   prometheus  menarik (scrape) /metrics tiap 15 detik dan menyimpan riwayatnya
+#   grafana     menggambar isi Prometheus jadi dashboard
+#
+# Arah panahnya penting dan sering terbalik di kepala orang: Prometheus MENARIK
+# dari API (pull), bukan API yang mengirim ke Prometheus (push). Akibatnya enak —
+# API tidak perlu tahu Prometheus ada, dan kalau Prometheus mati, API tidak ikut
+# terganggu sedikit pun.
+#
+# Jalankan:
+#     docker compose up -d --build
+#     docker compose ps
+#     docker compose logs -f api
+#     docker compose down            # tambah -v kalau mau sekalian hapus datanya
+#
+# Setelah naik:
+#     UI         http://localhost:8501   <- ini yang dibuka orang biasa
+#     API        http://localhost:8000/docs
+#     Prometheus http://localhost:9090
+#     Grafana    http://localhost:3000   (admin / admin, kecuali diubah di .env)
+# =============================================================================
+
+name: house-price-mlops
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. API
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: house-price-api:1.0.0
+    container_name: house-price-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=INFO
+      - MODEL_SOURCE=file
+      # Pergantian model otomatis. Di dalam container sumbernya BERKAS, jadi
+      # yang dipantau adalah waktu-ubah artifact: begitu artifact baru ditulis
+      # ke ./models (volume host), container memuatnya sendiri tanpa restart.
+      # 0 = mati. Naikkan ke 30-60 kalau mau dinyalakan.
+      - MODEL_CHECK_INTERVAL_SECONDS=${MODEL_CHECK_INTERVAL_SECONDS:-0}
+      # Nilainya diambil dari .env di folder ini. Compose membaca .env HANYA
+      # untuk substitusi seperti ini — file-nya tidak pernah ikut masuk image.
+      # Kosong = endpoint /admin/reload mati, dan itu default yang benar.
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+    volumes:
+      # models/ di-mount (bukan cuma dipanggang ke image) supaya artifact baru
+      # dari training di host bisa terlihat container — inilah yang membuat
+      # pergantian otomatis mode berkas bekerja di dalam Docker.
+      - ./models:/app/models:ro
+      # Log ditulis ke folder host supaya bisa dibaca `python -m src.monitor`
+      # dari luar container, dan supaya tidak hilang saat container diganti.
+      - ./logs:/app/logs
+      # Data latih dipasang READ-ONLY. Dibutuhkan sebagai pembanding analisis
+      # drift. Sengaja tidak dipanggang ke image: ukurannya besar, lisensinya
+      # milik Kaggle, dan data mentah tidak punya urusan di dalam artifact rilis.
+      - ./data/raw:/app/data/raw:ro
+      - ./reports:/app/reports
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    networks:
+      - mlops
+
+  # ---------------------------------------------------------------------------
+  # 2. FRONTEND — Streamlit
+  # ---------------------------------------------------------------------------
+  streamlit:
+    build:
+      context: .                      # root, supaya `frontend` tetap satu paket Python
+      dockerfile: frontend/Dockerfile
+    image: house-price-ui:1.0.0
+    container_name: house-price-ui
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      # SATU-SATUNYA hal yang frontend tahu tentang backend. Pindahkan backend
+      # ke server lain, cukup ubah baris ini — tidak ada kode yang perlu disentuh.
+      # "api" = nama service di jaringan compose, bukan localhost.
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        # Menunggu API benar-benar SEHAT, bukan sekadar sudah start. Tanpa ini,
+        # user membuka UI dan disambut "backend tidak bisa dihubungi" selama
+        # beberapa detik pertama — bug yang terlihat seperti bug sungguhan.
+        condition: service_healthy
+    networks:
+      - mlops
+
+  # ---------------------------------------------------------------------------
+  # 3. Prometheus — penyimpan deret waktu
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    container_name: house-price-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      # 15 hari sudah cukup untuk project ini; tanpa batas, disk habis diam-diam.
+      - "--storage.tsdb.retention.time=15d"
+      # Supaya konfigurasi bisa dimuat ulang tanpa restart:
+      #     curl -X POST http://localhost:9090/-/reload
+      - "--web.enable-lifecycle"
+    depends_on:
+      - api
+    networks:
+      - mlops
+
+  # ---------------------------------------------------------------------------
+  # 4. Grafana — lapisan gambar
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:13.2.1
+    container_name: house-price-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      # Provisioning = datasource dan dashboard dipasang dari FILE, bukan diklik
+      # manual di UI. Bedanya besar: dashboard yang dibuat lewat klik hidup di
+      # dalam volume dan hilang bersama volume itu. Yang dari file ikut masuk
+      # Git, bisa di-review, dan naik lagi persis sama di mesin siapa pun.
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - mlops
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  mlops:
+    driver: bridge

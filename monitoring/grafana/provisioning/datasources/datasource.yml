@@ -1,0 +1,24 @@
+# =============================================================================
+# Datasource Grafana, dipasang dari file (provisioning) — bukan diklik di UI.
+#
+# Kenapa penting: datasource yang dibuat lewat klik hidup di dalam volume
+# Grafana. Volume terhapus, konfigurasinya ikut hilang, dan orang berikutnya
+# harus menebak-nebak apa yang dulu disetel. Yang dari file ikut masuk Git,
+# bisa di-review lewat pull request, dan naik lagi persis sama di mesin siapa pun.
+# =============================================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    # uid dikunci manual supaya dashboard JSON bisa menunjuknya dengan pasti.
+    # Kalau dibiarkan Grafana yang mengarang uid, tiap mesin dapat uid berbeda
+    # dan semua panel muncul dengan pesan "datasource not found".
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090   # nama service di compose, bukan localhost
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s           # samakan dengan scrape_interval Prometheus

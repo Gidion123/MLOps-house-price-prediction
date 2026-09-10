@@ -1,0 +1,39 @@
+# =============================================================================
+# requirements-dev.txt — dependency untuk NGOPREK, bukan untuk produksi.
+#
+# Kenapa dipisah dari requirements.txt?
+# Karena Dockerfile cuma meng-install requirements.txt. JupyterLab, matplotlib,
+# dan pytest tidak punya urusan di dalam container yang melayani request user:
+# image jadi ratusan MB lebih gemuk, dan tiap paket tambahan = permukaan
+# serangan tambahan. Pemisahan ini praktik standar di repo production.
+#
+# Pin di sini sengaja lebih longgar (>=) daripada requirements.txt: paket ini
+# tidak ikut dikirim ke server, jadi reproducibility-nya tidak sekritis itu.
+#
+# Pasang:  pip install -r requirements-dev.txt   (otomatis ikut yang production)
+# =============================================================================
+
+-r requirements.txt
+
+# Dependency frontend ikut dipasang di environment DEV supaya seluruh test bisa
+# jalan dalam satu perintah. Di produksi keduanya tetap terpisah: image API dan
+# image Streamlit dibangun dari daftar masing-masing, tidak dari file ini.
+-r frontend/requirements.txt
+
+# ---- Notebook ----
+jupyterlab>=4.6.0
+ipykernel>=7.3.0
+
+# ---- Visualisasi (khusus EDA di notebook) ----
+matplotlib>=3.10.0
+seaborn>=0.13.2
+
+# ---- Eksperimen model (notebook saja, tidak masuk Docker) ----
+lightgbm>=4.5.0               # challenger di eksperimen; bukan champion produksi
+optuna>=4.0.0                 # hyperparameter search Section 8
+statsmodels>=0.14.0           # variance_inflation_factor untuk cek VIF
+
+# ---- Testing & kualitas kode ----
+pytest>=9.0.0
+httpx>=0.28.1                 # TestClient FastAPI butuh ini
+ruff>=0.16.0                  # linter + formatter
