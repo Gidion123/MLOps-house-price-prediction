@@ -40,8 +40,6 @@ logs/*
 
 # ---- Output notebook & laporan ----
 .ipynb_checkpoints/
-reports/figures/*
-!reports/figures/.gitkeep
 # drift_report.json — hasil kerja monitoring, bukan sumber kode
 reports/*.json
 
